@@ -1,0 +1,281 @@
+using UnityEngine;
+using UnityEditor;
+using System.IO;
+using System.Linq;
+
+public class TerrainDataReplacer : EditorWindow
+{
+    private GameObject parentObject;
+    private string folderName;
+    private int terrainSize;
+
+    private int selectedResolutionIndex = 0;
+    private int[] possibleResolutions = new int[] { 16, 32, 64, 128, 256, 512, 1024, 2048, 4096 };
+
+    // Add menu item to open this window
+    [MenuItem("Tool/Terrain Data Replacer")]
+    public static void ShowWindow()
+    {
+        GetWindow<TerrainDataReplacer>("Terrain Data Replacer");
+    }
+
+    void OnGUI()
+    {
+        GUILayout.Label("Replace Terrain Data", EditorStyles.boldLabel);
+
+        parentObject = (GameObject)EditorGUILayout.ObjectField("Parent Object", parentObject, typeof(GameObject), true);
+        folderName = EditorGUILayout.TextField("Folder Name", folderName);
+
+        if (GUILayout.Button("Replace Terrain Data"))
+        {
+            AssignTerrainData();
+        }
+
+        // Button for deleting terrain data assets
+        if (GUILayout.Button("Delete Terrain Data Assets"))
+        {
+            DeleteTerrainDataAssets();
+        }
+
+        GUILayout.Space(20);
+        GUILayout.Label("Adjust Terrain Size", EditorStyles.boldLabel);
+
+        terrainSize = EditorGUILayout.IntField("New Terrain Size", terrainSize);
+
+        // Button for resizing terrain data assets
+        if (GUILayout.Button("Resize Terrain Data Assets"))
+        {
+            ResizeAndRepositionTerrains();
+        }
+
+
+        GUILayout.Space(20);
+        GUILayout.Label("Assign Terrain Data", EditorStyles.boldLabel);
+
+        if (GUILayout.Button("Assign Collider Terrain data to Terrains"))
+        {
+            ApplyTerrainDataToTerrains();
+        }
+        if (GUILayout.Button("Assign Terrain data to Colliders"))
+        {
+            ApplyTerrainDataToColliders();
+        }
+
+        GUILayout.Space(20);
+        GUILayout.Label("Resize Terrain Control Texture", EditorStyles.boldLabel);
+
+        // Dropdown for selecting resolution
+        selectedResolutionIndex = EditorGUILayout.Popup("Control Texture Resolution", selectedResolutionIndex, possibleResolutions.Select(res => res.ToString()).ToArray());
+
+        if (GUILayout.Button("Resize Control Textures"))
+        {
+            ResizeControlTextures(possibleResolutions[selectedResolutionIndex]);
+        }
+        if (GUILayout.Button("Resize Base Textures"))
+        {
+            ResizeBaseTextures(possibleResolutions[selectedResolutionIndex]);
+        }
+
+        GUILayout.Space(20);
+        GUILayout.Label("Assign renderer to LOD Groups", EditorStyles.boldLabel);
+
+        if (GUILayout.Button("Assign Renderers"))
+        {
+            UpdateLODGroups();
+        }
+    }
+
+    private void AssignTerrainData()
+    {
+        if (parentObject == null)
+        {
+            Debug.LogError("Parent Object is not set");
+            return;
+        }
+
+        if (string.IsNullOrEmpty(folderName))
+        {
+            Debug.LogError("Folder Name is not set");
+            return;
+        }
+
+        string fullPath = Path.Combine("Assets", folderName);
+
+        if (!Directory.Exists(fullPath))
+        {
+            Debug.LogError("Folder does not exist: " + fullPath);
+            return;
+        }
+
+        Terrain[] terrains = parentObject.GetComponentsInChildren<Terrain>();
+        foreach (Terrain terrain in terrains)
+        {
+            string terrainDataName = terrain.terrainData.name;
+            string assetPath = Path.Combine(fullPath, terrainDataName + ".asset");
+
+            TerrainData newTerrainData = AssetDatabase.LoadAssetAtPath<TerrainData>(assetPath);
+            if (newTerrainData != null)
+            {
+                terrain.terrainData = newTerrainData;
+                Debug.Log("Assigned new terrain data to: " + terrain.gameObject.name);
+
+                TerrainCollider terrainCollider = terrain.gameObject.GetComponent<TerrainCollider>();
+                if (terrainCollider != null)
+                {
+                    terrainCollider.terrainData = newTerrainData;
+                    Debug.Log("Updated TerrainCollider with new terrain data for: " + terrain.gameObject.name);
+                }
+            }
+            else
+            {
+                Debug.LogWarning("No matching terrain data found for: " + terrain.gameObject.name);
+            }
+        }
+    }
+
+    private void DeleteTerrainDataAssets()
+    {
+        if (parentObject == null)
+        {
+            Debug.LogError("Parent Object is not set");
+            return;
+        }
+
+        Terrain[] terrains = parentObject.GetComponentsInChildren<Terrain>();
+        foreach (Terrain terrain in terrains)
+        {
+            string assetPath = Path.Combine("Assets", terrain.terrainData.name + ".asset");
+
+            // Check if the asset is located directly in the "Assets" folder
+
+            if (File.Exists(assetPath))
+            {
+                AssetDatabase.DeleteAsset(assetPath);
+                Debug.Log("Deleted terrain data asset: " + assetPath);
+            }
+            else
+            {
+                Debug.LogWarning("Asset not found in specified folder for terrain data: " + terrain.terrainData.name);
+            }
+        }
+
+        AssetDatabase.Refresh();
+    }
+
+    private void ResizeAndRepositionTerrains()
+    {
+
+        if (parentObject == null)
+        {
+            Debug.LogError("Parent Object is not set");
+            return;
+        }
+
+        Terrain[] terrains = parentObject.GetComponentsInChildren<Terrain>();
+
+        // Find the bounds of the current terrain grid
+        float minX = terrains.Min(t => t.transform.position.x);
+        float minZ = terrains.Min(t => t.transform.position.z);
+
+        // Calculate new positions and apply resizing
+        foreach (Terrain terrain in terrains)
+        {
+            // Calculate the terrain's grid position relative to the minimum bounds
+            int gridX = Mathf.RoundToInt((terrain.transform.position.x - minX) / terrain.terrainData.size.x);
+            int gridZ = Mathf.RoundToInt((terrain.transform.position.z - minZ) / terrain.terrainData.size.z);
+
+            // Calculate new position based on grid position and new size
+            Vector3 newPosition = new Vector3(
+                minX + gridX * terrainSize,
+                terrain.transform.position.y, // Assuming y doesn't change
+                minZ + gridZ * terrainSize
+            );
+
+            // Assign the new position and size to the terrain
+            terrain.terrainData.size = new Vector3(terrainSize, terrain.terrainData.size.y, terrainSize);
+            terrain.transform.position = newPosition;
+        }
+    }
+
+    private void ResizeControlTextures(int resolution)
+    {
+        foreach (Terrain terrain in Terrain.activeTerrains)
+        {
+            Undo.RecordObject(terrain.terrainData, "Resize Control Texture");
+            if (terrain.terrainData.alphamapResolution != resolution)
+            {
+                terrain.terrainData.alphamapResolution = resolution;
+                EditorUtility.SetDirty(terrain);
+            }
+        }
+
+        AssetDatabase.SaveAssets();
+        AssetDatabase.Refresh();
+        Debug.Log("Control textures resized to " + resolution);
+    }
+
+    private void ResizeBaseTextures(int resolution)
+    {
+        foreach (Terrain terrain in Terrain.activeTerrains)
+        {
+            Undo.RecordObject(terrain.terrainData, "Resize Control Texture");
+            if (terrain.terrainData.baseMapResolution != resolution)
+            {
+                terrain.terrainData.baseMapResolution = resolution;
+                EditorUtility.SetDirty(terrain);
+            }
+        }
+
+        AssetDatabase.SaveAssets();
+        AssetDatabase.Refresh();
+        Debug.Log("Control textures resized to " + resolution);
+    }
+
+    private void ApplyTerrainDataToTerrains()
+    {
+        if (parentObject == null)
+        {
+            Debug.LogError("Parent Object is not set");
+            return;
+        }
+
+        // Get all child objects
+        foreach (Transform child in parentObject.transform)
+        {
+            // Get the TerrainCollider component
+            TerrainCollider terrainCollider = child.GetComponent<TerrainCollider>();
+            // Get the Terrain component
+            Terrain terrain = child.GetComponent<Terrain>();
+
+            // If both components are present, apply the TerrainData from the collider to the terrain
+            if (terrainCollider != null && terrain != null)
+            {
+                terrain.terrainData = terrainCollider.terrainData;
+            }
+        }
+    }
+
+    private void ApplyTerrainDataToColliders()
+    {
+        if (parentObject == null)
+        {
+            Debug.LogError("Parent Object is not set");
+            return;
+        }
+
+        // Get all child objects
+        foreach (Transform child in parentObject.transform)
+        {
+            // Get the TerrainCollider component
+            TerrainCollider terrainCollider = child.GetComponent<TerrainCollider>();
+            // Get the Terrain component
+            Terrain terrain = child.GetComponent<Terrain>();
+
+            // If both components are present, apply the TerrainData from the collider to the terrain
+            if (terrainCollider != null && terrain != null)
+            {
+                terrainCollider.terrainData = terrain.terrainData;
+            }
+        }
+    }
+}
