@@ -1,0 +1,175 @@
+using UnityEditor;
+using UnityEngine;
+
+public class TerrainTextureResolutionSetter : Editor
+{
+    [MenuItem("Tool/Set Control Texture Resolution")]
+    private static void SetControlTextureResolution()
+    {
+        // Get the currently selected terrains in the editor
+        Terrain[] terrains = Selection.GetFiltered<Terrain>(SelectionMode.Editable | SelectionMode.TopLevel);
+
+        if (terrains.Length > 0)
+        {
+            foreach (Terrain terrain in terrains)
+            {
+                Undo.RecordObject(terrain.terrainData, "Changed Control Texture Resolution");
+
+                var currentRes = terrain.terrainData.alphamapResolution;
+                if (currentRes != 64) // Check if the resolution is not already 64
+                {
+                    // Get the current alphamaps
+                    float[,,] oldAlphamaps = terrain.terrainData.GetAlphamaps(0, 0, currentRes, currentRes);
+
+                    // Set the new resolution (this clears the current maps)
+                    terrain.terrainData.alphamapResolution = 64;
+
+                    // Calculate the scale factor between the old and new resolution
+                    float rescaleFactor = (float)currentRes / 64;
+
+                    // Resample and set the alphamaps data
+                    float[,,] newAlphamaps = terrain.terrainData.GetAlphamaps(0, 0, 64, 64);
+                    for (int y = 0; y < 64; y++)
+                    {
+                        for (int x = 0; x < 64; x++)
+                        {
+                            for (int layer = 0; layer < newAlphamaps.GetLength(2); layer++)
+                            {
+                                int oldX = Mathf.Min((int)(x * rescaleFactor), currentRes - 1);
+                                int oldY = Mathf.Min((int)(y * rescaleFactor), currentRes - 1);
+
+                                newAlphamaps[y, x, layer] = oldAlphamaps[oldY, oldX, layer];
+                            }
+                        }
+                    }
+
+                    // Apply the resampled alphamaps to the terrain data
+                    terrain.terrainData.SetAlphamaps(0, 0, newAlphamaps);
+
+                    EditorUtility.SetDirty(terrain);
+                }
+            }
+
+            // Save assets and refresh the editor state
+            AssetDatabase.SaveAssets();
+            AssetDatabase.Refresh();
+        }
+        else
+        {
+            Debug.LogWarning("No terrains are selected. Please select at least one terrain.");
+        }
+    }
+
+    [MenuItem("Tool/Set Base Texture Resolution")]
+    private static void SetBaseTextureResolution()
+    {
+        // Get the currently selected terrains in the editor
+        Terrain[] terrains = Selection.GetFiltered<Terrain>(SelectionMode.Editable | SelectionMode.TopLevel);
+
+        if (terrains.Length > 0)
+        {
+            foreach (Terrain terrain in terrains)
+            {
+                Undo.RecordObject(terrain.terrainData, "Changed Base Texture Resolution");
+
+                // Set base map resolution to 64x64
+                if (terrain.terrainData.baseMapResolution != 64)
+                {
+                    terrain.terrainData.baseMapResolution = 64;
+                    EditorUtility.SetDirty(terrain);
+                }
+            }
+
+            // Save assets and refresh the editor state
+            AssetDatabase.SaveAssets();
+            AssetDatabase.Refresh();
+        }
+        else
+        {
+            Debug.LogWarning("No terrains are selected. Please select at least one terrain.");
+        }
+    }
+
+
+    [MenuItem("Tool/Enable Draw")]
+    private static void SetDraw()
+    {
+        // Get the currently selected terrains in the editor
+        Terrain[] terrains = Selection.GetFiltered<Terrain>(SelectionMode.Editable | SelectionMode.TopLevel);
+
+        if (terrains.Length > 0)
+        {
+            foreach (Terrain terrain in terrains)
+            {
+                terrain.drawTreesAndFoliage = true;
+                // Set base map resolution to 64x64
+                EditorUtility.SetDirty(terrain);
+
+            }
+
+            // Save assets and refresh the editor state
+            AssetDatabase.SaveAssets();
+            AssetDatabase.Refresh();
+        }
+        else
+        {
+            Debug.LogWarning("No terrains are selected. Please select at least one terrain.");
+        }
+    }
+
+    [MenuItem("Tool/Disable Draw")]
+    private static void SetDrawDisabled()
+    {
+        // Get the currently selected terrains in the editor
+        Terrain[] terrains = Selection.GetFiltered<Terrain>(SelectionMode.Editable | SelectionMode.TopLevel);
+
+        if (terrains.Length > 0)
+        {
+            foreach (Terrain terrain in terrains)
+            {
+                terrain.drawTreesAndFoliage = false;
+                // Set base map resolution to 64x64
+                EditorUtility.SetDirty(terrain);
+
+            }
+
+            // Save assets and refresh the editor state
+            AssetDatabase.SaveAssets();
+            AssetDatabase.Refresh();
+        }
+        else
+        {
+            Debug.LogWarning("No terrains are selected. Please select at least one terrain.");
+        }
+    }
+
+    [MenuItem("Tool/Set Billboard Start Distance")]
+    private static void SetBillboardStartDistance()
+    {
+        // Get the currently selected terrains in the editor
+        Terrain[] terrains = Selection.GetFiltered<Terrain>(SelectionMode.Editable | SelectionMode.TopLevel);
+
+        if (terrains.Length > 0)
+        {
+            foreach (Terrain terrain in terrains)
+            {
+                Undo.RecordObject(terrain, "Changed Billboard Start Distance");
+
+                // Set billboard start distance to 2000
+                if (terrain.treeBillboardDistance != 2000) // Check if the distance is not already 2000
+                {
+                    terrain.treeBillboardDistance = 2000;
+                    EditorUtility.SetDirty(terrain);
+                }
+            }
+
+            // Save assets and refresh the editor state
+            AssetDatabase.SaveAssets();
+            AssetDatabase.Refresh();
+        }
+        else
+        {
+            Debug.LogWarning("No terrains are selected. Please select at least one terrain.");
+        }
+    }
+}
