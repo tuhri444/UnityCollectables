@@ -1,0 +1,170 @@
+using System.Collections.Generic;
+using System.Linq;
+using UnityEditor;
+using UnityEngine;
+
+public class LODGroupOrganizer : EditorWindow
+{
+    GameObject _parentObject;
+
+    [MenuItem("Tool/LODGroupOrganizer")]
+    public static void ShowWindow()
+    {
+        GetWindow<LODGroupOrganizer>("LOD Group Organizer");
+    }
+
+    void OnGUI()
+    {
+        GUILayout.Label("Organize Combined Meshes into LOD Groups", EditorStyles.boldLabel);
+
+        _parentObject = EditorGUILayout.ObjectField("Parent Object", _parentObject, typeof(GameObject), true) as GameObject;
+
+        if (GUILayout.Button("Organize LODs"))
+        {
+            if (_parentObject != null)
+            {
+                OrganizeLODs(_parentObject);
+            }
+            else
+            {
+                Debug.LogError("Parent object is null. Please assign a parent object.");
+            }
+        }
+    }
+
+    void OrganizeLODs(GameObject parent)
+    {
+        // Create a new parent object for the organized hierarchy
+        GameObject newParent = new GameObject(parent.name + " - COMBINED");
+        // Dictionary keyed by base name, with a value of another dictionary keyed by LOD level with a list of GameObjects as the value
+        Dictionary<string, Dictionary<string, List<GameObject>>> lodGroups = new Dictionary<string, Dictionary<string, List<GameObject>>>();
+
+        // Iterate through all children
+        foreach (Transform child in parent.transform)
+        {
+            // Logic to group children by their base name and then their LOD level
+            string baseName = ExtractBaseNameFromName(child.name); // e.g., "MeshBaker-(100.00, 100.00, 300.00)"
+            string lodLevel = ExtractLODLevelFromName(child.name); // e.g., "LOD0"
+
+            if (!lodGroups.ContainsKey(baseName))
+            {
+                lodGroups[baseName] = new Dictionary<string, List<GameObject>>();
+            }
+            if (!lodGroups[baseName].ContainsKey(lodLevel))
+            {
+                lodGroups[baseName][lodLevel] = new List<GameObject>();
+            }
+            lodGroups[baseName][lodLevel].Add(child.gameObject);
+        }
+
+        // Inside the OrganizeLODs method, in the "Create LOD groups" loop:
+
+        // Create LOD groups
+        foreach (var baseNameGroup in lodGroups)
+        {
+            // Check if there's only one LOD level and it's LOD0
+            if (baseNameGroup.Value.Count == 1 && baseNameGroup.Value.ContainsKey("LOD0"))
+            {
+                foreach (var mesh in baseNameGroup.Value["LOD0"])
+                {
+                    // Reparenting mesh GameObject under the newParent GameObject
+                    mesh.transform.SetParent(newParent.transform);
+                }
+                continue;
+            }
+
+            GameObject lodGroupObj = new GameObject(baseNameGroup.Key);
+            lodGroupObj.transform.parent = newParent.transform;
+            LODGroup group = lodGroupObj.AddComponent<LODGroup>();
+
+            var lods = new List<LOD>();
+
+            // Sort LOD levels (e.g., LOD0, LOD1, etc.) to ensure they're in order
+            var sortedLodLevels = baseNameGroup.Value.Keys.ToList();
+            sortedLodLevels.Sort(); // Assumes LOD levels are named in a way that allows proper sorting (e.g., LOD0, LOD1, ...)
+
+            foreach (var lodLevel in sortedLodLevels)
+            {
+                var renderers = new List<Renderer>();
+                foreach (var mesh in baseNameGroup.Value[lodLevel])
+                {
+                    // Reparenting mesh GameObject under the LOD group GameObject
+                    mesh.transform.SetParent(lodGroupObj.transform);
+
+                    // This ensures that the mesh gameObjects are active and have any mesh renderers/components needed
+                    if (!mesh.activeSelf)
+                        mesh.SetActive(true);
+
+                    renderers.AddRange(mesh.GetComponentsInChildren<Renderer>(true)); // Including inactive children
+                }
+
+                // Calculate screenRelativeTransitionHeight or get from existing settings
+                float transitionHeight = CalculateTransitionHeight(lodLevel);
+                lods.Add(new LOD(transitionHeight, renderers.ToArray()));
+            }
+
+            group.SetLODs(lods.ToArray());
+            group.RecalculateBounds();
+        }
+
+    }
+
+    string ExtractBaseNameFromName(string name)
+    {
+        // Extract the base name from the GameObject's name, excluding the LOD part
+        // Adjust the logic depending on your actual naming convention
+        int lodIndex = name.LastIndexOf("_LOD");
+        if (lodIndex > 0)
+        {
+            return name.Substring(0, lodIndex);
+        }
+        else
+        {
+            // Handle cases where there's no LOD in the name, depending on your scenario
+            return name;
+        }
+    }
+
+    string ExtractLODLevelFromName(string name)
+    {
+        // Extract the LOD level from the GameObject's name
+        // Adjust the logic depending on your actual naming convention
+        string[] parts = name.Split('_');
+        foreach (string part in parts)
+        {
+            if (part.StartsWith("LOD"))
+            {
+                return part;
+            }
+        }
+        return ""; // or handle differently, if appropriate
+    }
+
+    float CalculateTransitionHeight(string lodLevel)
+    {
+        // Strip off the "-mesh" part of the string, if present
+        string processedLodLevel = lodLevel.Contains("-") ? lodLevel.Substring(0, lodLevel.IndexOf("-")) : lodLevel;
+
+        // Example transition heights for each LOD level.
+        Dictionary<string, float> transitionHeights = new Dictionary<string, float>()
+            {
+                { "LOD0", 0.5f },
+                { "LOD1", 0.4f },
+                { "LOD2", 0.3f },
+                { "LOD3", 0.2f },
+                { "LOD4", 0.1f },
+            };
+
+        float value;
+        if (transitionHeights.TryGetValue(processedLodLevel, out value))
+        {
+            return value;
+        }
+        else
+        {
+            Debug.LogError("Unrecognized LOD level: " + lodLevel);
+            return 0f;
+        }
+    }
+
+}
